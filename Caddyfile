@@ -1,0 +1,26 @@
+cloudtab.appeul.com {
+	# API — proxy /api/* and /health to FastAPI backend
+	handle /api/* {
+		reverse_proxy cloudtab-api:8000
+	}
+
+	handle /health {
+		reverse_proxy cloudtab-api:8000
+	}
+
+	# Swagger docs (optional — remove in hardened production)
+	handle /docs* {
+		reverse_proxy cloudtab-api:8000
+	}
+	handle /openapi.json {
+		reverse_proxy cloudtab-api:8000
+	}
+	handle /redoc* {
+		reverse_proxy cloudtab-api:8000
+	}
+
+	# Everything else → frontend SPA
+	handle {
+		reverse_proxy cloudtab-frontend:80
+	}
+}
