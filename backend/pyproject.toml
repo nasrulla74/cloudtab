@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cloudtab"
+version = "0.1.0"
+description = "Odoo server management platform"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30.0",
+    "psycopg2-binary>=2.9.10",
+    "alembic>=1.14.0",
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    "celery[redis]>=5.4.0",
+    "paramiko>=3.5.0",
+    "cryptography>=44.0.0",
+    "pydantic-settings>=2.6.0",
+    "pydantic[email]>=2.10.0",
+    "python-multipart>=0.0.12",
+    "boto3>=1.35.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "httpx>=0.28.0",
+    "aiosqlite>=0.20.0",
+    "ruff>=0.8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["app/tests"]
+asyncio_mode = "auto"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
