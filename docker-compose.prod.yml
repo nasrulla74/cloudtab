@@ -11,7 +11,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - caddy_net
+      - coolify
 
   api:
     build:
@@ -19,13 +19,12 @@ services:
       dockerfile: Dockerfile.prod
     container_name: cloudtab-api
     restart: unless-stopped
-    env_file:
-      - .env.production
+
     depends_on:
       redis:
         condition: service_healthy
     networks:
-      - caddy_net
+      - coolify
 
   worker:
     build:
@@ -34,13 +33,12 @@ services:
     container_name: cloudtab-worker
     command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=4
     restart: unless-stopped
-    env_file:
-      - .env.production
+
     depends_on:
       redis:
         condition: service_healthy
     networks:
-      - caddy_net
+      - coolify
 
   beat:
     build:
@@ -49,13 +47,12 @@ services:
     container_name: cloudtab-beat
     command: celery -A app.workers.celery_app beat --loglevel=info
     restart: unless-stopped
-    env_file:
-      - .env.production
+
     depends_on:
       redis:
         condition: service_healthy
     networks:
-      - caddy_net
+      - coolify
 
   frontend:
     build:
@@ -66,10 +63,10 @@ services:
     container_name: cloudtab-frontend
     restart: unless-stopped
     networks:
-      - caddy_net
+      - coolify
 
 networks:
-  caddy_net:
+  coolify:
     external: true
 
 volumes:
