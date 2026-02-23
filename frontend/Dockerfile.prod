@@ -3,7 +3,7 @@ FROM node:20-alpine AS build
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
-RUN npm install
+RUN npm ci --omit=dev
 
 COPY . .
 
@@ -15,10 +15,8 @@ RUN npm run build
 # --- Production stage: serve with lightweight Nginx ---
 FROM nginx:alpine
 
-# Copy built assets
 COPY --from=build /app/dist /usr/share/nginx/html
 
-# SPA routing: all non-file requests → index.html
 RUN printf 'server {\n\
     listen 80;\n\
     root /usr/share/nginx/html;\n\
@@ -26,7 +24,6 @@ RUN printf 'server {\n\
     location / {\n\
         try_files $uri $uri/ /index.html;\n\
     }\n\
-    # Cache static assets\n\
     location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg|woff2?)$ {\n\
         expires 30d;\n\
         add_header Cache-Control "public, immutable";\n\

@@ -10,7 +10,13 @@
       "Bash(docker info:*)",
       "Bash(find:*)",
       "Bash(npx tsc:*)",
-      "Bash(npx --package typescript tsc:*)"
+      "Bash(npx --package typescript tsc:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nInitial commit: CloudTab — Odoo server management platform\n\nFull-stack application for deploying and managing Odoo instances on remote servers.\n\nBackend \\(FastAPI + SQLAlchemy 2.0 async + Celery\\):\n- REST API with JWT auth, 8 routers \\(auth, users, servers, instances, domains, backups, git, tasks\\)\n- 9 SQLAlchemy models with Alembic migration\n- Celery workers for SSH-based server operations with exponential backoff retry\n- Celery Beat for scheduled backup execution and retention cleanup\n- S3 integration for backup storage \\(boto3, SFTP bridge pattern\\)\n- Fernet encryption for SSH keys and deploy keys\n- Global exception handlers, request ID tracking, structured logging\n\nFrontend \\(React 18 + TypeScript + Vite + Tailwind\\):\n- 7 pages: login, dashboard, servers, server detail, instance deploy, instance detail, 404\n- Task polling with exponential backoff for async operation tracking\n- Toast notification system with API error event bus\n- Auth context with JWT token refresh\n\nInfrastructure:\n- Docker Compose with PostgreSQL, Redis, API, Worker, Beat, Frontend\n- Health checks and dependency ordering for all services\n- 9 test files covering API, services, encryption, and S3\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git config:*)",
+      "Bash(git branch:*)",
+      "Bash(git remote add:*)",
+      "Bash(git push:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
