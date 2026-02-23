@@ -1,7 +1,6 @@
 services:
   redis:
     image: redis:7-alpine
-    container_name: cloudtab-redis
     restart: unless-stopped
     volumes:
       - redis_data:/data
@@ -17,9 +16,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
-    container_name: cloudtab-api
     restart: unless-stopped
-
     depends_on:
       redis:
         condition: service_healthy
@@ -30,10 +27,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
-    container_name: cloudtab-worker
     command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=4
     restart: unless-stopped
-
     depends_on:
       redis:
         condition: service_healthy
@@ -44,10 +39,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
-    container_name: cloudtab-beat
     command: celery -A app.workers.celery_app beat --loglevel=info
     restart: unless-stopped
-
     depends_on:
       redis:
         condition: service_healthy
@@ -60,7 +53,6 @@ services:
       dockerfile: Dockerfile.prod
       args:
         VITE_API_URL: https://cloudtab.appeul.com/api/v1
-    container_name: cloudtab-frontend
     restart: unless-stopped
     networks:
       - coolify
