@@ -6,13 +6,12 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends gcc libpq-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# Install build backend first, then project dependencies
-COPY pyproject.toml .
-RUN pip install --no-cache-dir hatchling
-
-# Copy source and install package (editable so app/ is importable)
+# Copy all source first
 COPY . .
-RUN pip install --no-cache-dir -e .
+
+# Install hatchling (build backend) then the project
+RUN pip install --no-cache-dir hatchling && \
+    pip install --no-cache-dir .
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
