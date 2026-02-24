@@ -21,3 +21,13 @@ export async function changePassword(currentPassword: string, newPassword: strin
     new_password: newPassword,
   });
 }
+
+export async function checkSetupRequired(): Promise<boolean> {
+  const res = await client.get("/auth/setup");
+  return res.data.setup_required;
+}
+
+export async function setupAdmin(email: string, password: string) {
+  const res = await client.post("/auth/setup", { email, password });
+  return res.data;
+}

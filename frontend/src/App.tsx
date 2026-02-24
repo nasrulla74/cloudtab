@@ -4,6 +4,7 @@ import ProtectedRoute from "./components/shared/ProtectedRoute";
 import { ToastProvider } from "./components/shared/Toast";
 import MainLayout from "./components/layout/MainLayout";
 import LoginPage from "./pages/LoginPage";
+import SetupPage from "./pages/SetupPage";
 import DashboardPage from "./pages/DashboardPage";
 import ServersPage from "./pages/ServersPage";
 import ServerDetailPage from "./pages/ServerDetailPage";
@@ -18,6 +19,7 @@ export default function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/setup" element={<SetupPage />} />
             <Route
               element={
                 <ProtectedRoute>
