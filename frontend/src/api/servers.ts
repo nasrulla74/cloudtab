@@ -75,3 +75,13 @@ export async function installDeps(id: number): Promise<TaskTrigger> {
   const res = await client.post(`/servers/${id}/install-deps`);
   return res.data;
 }
+
+export interface GeneratedSSHKey {
+  private_key: string;
+  public_key: string;
+}
+
+export async function generateSSHKey(): Promise<GeneratedSSHKey> {
+  const res = await client.post("/servers/generate-key");
+  return res.data;
+}

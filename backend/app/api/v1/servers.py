@@ -1,4 +1,7 @@
+import io
+
 from fastapi import APIRouter, Depends, HTTPException, status
+from paramiko import RSAKey
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -21,6 +24,20 @@ from app.workers.server_tasks import (
 )
 
 router = APIRouter(prefix="/servers", tags=["servers"])
+
+
+@router.post("/generate-key")
+async def generate_ssh_key(current_user: User = Depends(get_current_user)):
+    """Generate a new RSA 4096-bit SSH key pair and return both keys."""
+    key = RSAKey.generate(bits=4096)
+
+    private_key_buf = io.StringIO()
+    key.write_private_key(private_key_buf)
+    private_key = private_key_buf.getvalue()
+
+    public_key = f"ssh-rsa {key.get_base64()} cloudtab-generated"
+
+    return {"private_key": private_key, "public_key": public_key}
 
 
 @router.get("", response_model=list[ServerRead])

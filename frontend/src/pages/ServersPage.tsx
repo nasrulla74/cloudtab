@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { listServers, createServer, type Server, type ServerCreate } from "../api/servers";
+import { listServers, createServer, generateSSHKey, type Server, type ServerCreate } from "../api/servers";
 import { statusDot, formatDate } from "../lib/utils";
 import Modal from "../components/shared/Modal";
 
@@ -17,6 +17,9 @@ export default function ServersPage() {
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [generatingKey, setGeneratingKey] = useState(false);
+  const [publicKey, setPublicKey] = useState("");
+  const [copied, setCopied] = useState(false);
 
   const loadServers = useCallback(() => {
     listServers()
@@ -26,14 +29,41 @@ export default function ServersPage() {
 
   useEffect(() => { loadServers(); }, [loadServers]);
 
+  const handleCloseModal = () => {
+    setShowModal(false);
+    setFormData({ name: "", host: "", port: 22, ssh_user: "root", ssh_key: "" });
+    setPublicKey("");
+    setError("");
+    setCopied(false);
+  };
+
+  const handleGenerateKey = async () => {
+    setGeneratingKey(true);
+    setPublicKey("");
+    try {
+      const { private_key, public_key } = await generateSSHKey();
+      setFormData((prev) => ({ ...prev, ssh_key: private_key }));
+      setPublicKey(public_key);
+    } catch {
+      setError("Failed to generate SSH key.");
+    } finally {
+      setGeneratingKey(false);
+    }
+  };
+
+  const handleCopyPublicKey = async () => {
+    await navigator.clipboard.writeText(publicKey);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setSubmitting(true);
     try {
       await createServer(formData);
-      setShowModal(false);
-      setFormData({ name: "", host: "", port: 22, ssh_user: "root", ssh_key: "" });
+      handleCloseModal();
       loadServers();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to create server";
@@ -98,7 +128,7 @@ export default function ServersPage() {
         </div>
       )}
 
-      <Modal open={showModal} onClose={() => setShowModal(false)} title="Add Server">
+      <Modal open={showModal} onClose={handleCloseModal} title="Add Server">
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
@@ -144,22 +174,69 @@ export default function ServersPage() {
               required
             />
           </div>
+
+          {/* SSH Private Key */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">SSH Private Key</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-sm font-medium text-gray-700">SSH Private Key</label>
+              <button
+                type="button"
+                onClick={handleGenerateKey}
+                disabled={generatingKey}
+                className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50 flex items-center gap-1"
+              >
+                {generatingKey ? (
+                  <>
+                    <span className="animate-spin inline-block w-3 h-3 border border-blue-600 border-t-transparent rounded-full" />
+                    Generating...
+                  </>
+                ) : (
+                  "⚡ Generate SSH Key"
+                )}
+              </button>
+            </div>
             <textarea
               value={formData.ssh_key}
               onChange={(e) => setFormData({ ...formData, ssh_key: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-mono"
-              rows={6}
-              placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;..."
+              rows={5}
+              placeholder="-----BEGIN RSA PRIVATE KEY-----&#10;Paste your private key here, or click Generate SSH Key above"
               required
             />
           </div>
+
+          {/* Public Key Display */}
+          {publicKey && (
+            <div className="rounded-md border border-green-200 bg-green-50 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-green-800">
+                  📋 Add this public key to your server:
+                </p>
+                <button
+                  type="button"
+                  onClick={handleCopyPublicKey}
+                  className="text-xs px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700"
+                >
+                  {copied ? "Copied!" : "Copy"}
+                </button>
+              </div>
+              <code className="block text-xs text-green-900 break-all font-mono leading-relaxed">
+                {publicKey}
+              </code>
+              <p className="text-xs text-green-700">
+                Run on your server:{" "}
+                <code className="bg-green-100 px-1 rounded">
+                  echo '{publicKey}' &gt;&gt; ~/.ssh/authorized_keys
+                </code>
+              </p>
+            </div>
+          )}
+
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex justify-end gap-3">
             <button
               type="button"
-              onClick={() => setShowModal(false)}
+              onClick={handleCloseModal}
               className="px-4 py-2 text-sm text-gray-700 border rounded-md hover:bg-gray-50"
             >
               Cancel
