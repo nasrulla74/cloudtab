@@ -68,6 +68,13 @@ def deploy_odoo_instance(self, instance_id: int) -> dict:
                 ssh.execute(f"mkdir -p /opt/cloudtab/{odoo_name}/config", timeout=10)
                 ssh.execute(f"mkdir -p /opt/cloudtab/{odoo_name}/pgdata", timeout=10)
 
+                # Odoo container runs as uid 101 (odoo user) — fix ownership so it
+                # can write sessions, filestore, etc.
+                ssh.execute(
+                    f"chown -R 101:101 /opt/cloudtab/{odoo_name}/data /opt/cloudtab/{odoo_name}/addons",
+                    timeout=10,
+                )
+
                 # Create Docker network for this instance
                 network_name = f"net-{odoo_name}"
                 ssh.execute(f"docker network create {network_name} 2>/dev/null || true", timeout=15)
