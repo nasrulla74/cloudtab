@@ -22,6 +22,12 @@ services:
         condition: service_healthy
     networks:
       - coolify
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.cloudtab-api.rule=Host(`cloudtab.appeul.com`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.cloudtab-api.entrypoints=https"
+      - "traefik.http.routers.cloudtab-api.tls=true"
+      - "traefik.http.services.cloudtab-api.loadbalancer.server.port=8000"
 
   worker:
     build:
@@ -34,6 +40,8 @@ services:
         condition: service_healthy
     networks:
       - coolify
+    labels:
+      - "traefik.enable=false"
 
   beat:
     build:
@@ -46,6 +54,8 @@ services:
         condition: service_healthy
     networks:
       - coolify
+    labels:
+      - "traefik.enable=false"
 
   frontend:
     build:
