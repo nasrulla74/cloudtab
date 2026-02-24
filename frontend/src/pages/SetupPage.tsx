@@ -20,6 +20,10 @@ export default function SetupPage() {
       setError("Password must be at least 8 characters.");
       return;
     }
+    if (password.length > 72) {
+      setError("Password must be 72 characters or fewer.");
+      return;
+    }
     if (password !== confirmPassword) {
       setError("Passwords do not match.");
       return;
@@ -70,6 +74,7 @@ export default function SetupPage() {
               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               required
               minLength={8}
+              maxLength={72}
             />
           </div>
           <div>

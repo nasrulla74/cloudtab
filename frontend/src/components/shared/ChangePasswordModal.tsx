@@ -36,6 +36,10 @@ export default function ChangePasswordModal({ open, onClose }: ChangePasswordMod
       setError("New password must be at least 8 characters.");
       return;
     }
+    if (newPassword.length > 72) {
+      setError("New password must be 72 characters or fewer.");
+      return;
+    }
     if (newPassword !== confirmPassword) {
       setError("New passwords do not match.");
       return;
@@ -90,6 +94,7 @@ export default function ChangePasswordModal({ open, onClose }: ChangePasswordMod
               onChange={(e) => setNewPassword(e.target.value)}
               required
               minLength={8}
+              maxLength={72}
               className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
