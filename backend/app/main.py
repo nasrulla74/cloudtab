@@ -23,18 +23,23 @@ logger = logging.getLogger(__name__)
 
 async def seed_admin_user():
     """Create admin user if it doesn't exist."""
-    async with async_session() as db:
-        result = await db.execute(
-            select(User).where(User.email == settings.ADMIN_EMAIL)
-        )
-        if result.scalar_one_or_none() is None:
-            admin = User(
-                email=settings.ADMIN_EMAIL,
-                hashed_password=hash_password(settings.ADMIN_PASSWORD),
+    try:
+        async with async_session() as db:
+            result = await db.execute(
+                select(User).where(User.email == settings.ADMIN_EMAIL)
             )
-            db.add(admin)
-            await db.commit()
-            logger.info("Admin user seeded: %s", settings.ADMIN_EMAIL)
+            if result.scalar_one_or_none() is None:
+                admin = User(
+                    email=settings.ADMIN_EMAIL,
+                    hashed_password=hash_password(settings.ADMIN_PASSWORD),
+                )
+                db.add(admin)
+                await db.commit()
+                logger.info("Admin user seeded: %s", settings.ADMIN_EMAIL)
+            else:
+                logger.info("Admin user already exists: %s", settings.ADMIN_EMAIL)
+    except Exception:
+        logger.exception("Failed to seed admin user — check DATABASE_URL and migrations")
 
 
 @asynccontextmanager
