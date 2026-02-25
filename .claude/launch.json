@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Frontend (Vite)",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["frontend/node_modules/vite/bin/vite.js", "frontend", "--host"],
+      "port": 5173
+    },
+    {
+      "name": "Backend API (FastAPI)",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "up", "db", "redis", "api"],
+      "port": 8000
+    },
+    {
+      "name": "Full Stack",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "up"],
+      "port": 8000
+    }
+  ]
+}
