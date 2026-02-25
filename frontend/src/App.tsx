@@ -11,8 +11,6 @@ import ServerDetailPage from "./pages/ServerDetailPage";
 import InstanceDeployPage from "./pages/InstanceDeployPage";
 import InstanceDetailPage from "./pages/InstanceDetailPage";
 import NotFoundPage from "./pages/NotFoundPage";
-import InstancesPage from "./pages/InstancesPage";
-import TerminalPage from "./pages/TerminalPage";
 
 export default function App() {
   return (
@@ -33,9 +31,7 @@ export default function App() {
               <Route path="/servers" element={<ServersPage />} />
               <Route path="/servers/:id" element={<ServerDetailPage />} />
               <Route path="/servers/:id/deploy" element={<InstanceDeployPage />} />
-              <Route path="/instances" element={<InstancesPage />} />
               <Route path="/instances/:id" element={<InstanceDetailPage />} />
-              <Route path="/terminal" element={<TerminalPage />} />
             </Route>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="*" element={<NotFoundPage />} />
