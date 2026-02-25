@@ -22,14 +22,12 @@ services:
         condition: service_healthy
     networks:
       - coolify
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
     labels:
-      - "traefik.enable=false"
+      - "traefik.enable=true"
+      - "traefik.http.routers.cloudtab-api.rule=Host(`cloudtab.appeul.com`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.cloudtab-api.entrypoints=https"
+      - "traefik.http.routers.cloudtab-api.tls=true"
+      - "traefik.http.services.cloudtab-api.loadbalancer.server.port=8000"
 
   worker:
     build:
@@ -42,12 +40,6 @@ services:
         condition: service_healthy
     networks:
       - coolify
-    healthcheck:
-      test: ["CMD", "celery", "-A", "app.workers.celery_app", "inspect", "ping", "--timeout", "5"]
-      interval: 30s
-      timeout: 15s
-      retries: 3
-      start_period: 30s
     labels:
       - "traefik.enable=false"
 
@@ -62,12 +54,6 @@ services:
         condition: service_healthy
     networks:
       - coolify
-    healthcheck:
-      test: ["CMD", "pgrep", "-f", "celery"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
     labels:
       - "traefik.enable=false"
 
@@ -80,12 +66,6 @@ services:
     restart: unless-stopped
     networks:
       - coolify
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:80"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
 
 networks:
   coolify:
