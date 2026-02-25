@@ -28,12 +28,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.cloudtab-api.rule=Host(`cloudtab.appeul.com`) && PathPrefix(`/api`)"
-      - "traefik.http.routers.cloudtab-api.entrypoints=https"
-      - "traefik.http.routers.cloudtab-api.tls=true"
-      - "traefik.http.services.cloudtab-api.loadbalancer.server.port=8000"
 
   worker:
     build:
@@ -52,8 +46,6 @@ services:
       timeout: 15s
       retries: 3
       start_period: 30s
-    labels:
-      - "traefik.enable=false"
 
   beat:
     build:
@@ -72,8 +64,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
-    labels:
-      - "traefik.enable=false"
 
   frontend:
     build:
