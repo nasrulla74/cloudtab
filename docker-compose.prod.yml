@@ -27,6 +27,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.cloudtab-api.rule=Host(`cloudtab.appeul.com`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.cloudtab-api.service=cloudtab-api"
       - "traefik.http.services.cloudtab-api.loadbalancer.server.port=8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
@@ -86,6 +87,11 @@ services:
       - "80"
     networks:
       - coolify
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.cloudtab-frontend.rule=Host(`cloudtab.appeul.com`)"
+      - "traefik.http.routers.cloudtab-frontend.service=cloudtab-frontend"
+      - "traefik.http.services.cloudtab-frontend.loadbalancer.server.port=80"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:80"]
       interval: 30s
