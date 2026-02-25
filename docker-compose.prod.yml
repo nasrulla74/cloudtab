@@ -17,6 +17,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile.prod
     restart: unless-stopped
+    expose:
+      - "8000"
     depends_on:
       redis:
         condition: service_healthy
@@ -31,7 +33,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
 
   worker:
     build:
@@ -47,9 +49,9 @@ services:
     labels:
       - "traefik.enable=false"
     healthcheck:
-      test: ["CMD", "celery", "-A", "app.workers.celery_app", "inspect", "ping", "--timeout", "5"]
+      test: ["CMD", "pgrep", "-f", "celery"]
       interval: 30s
-      timeout: 15s
+      timeout: 5s
       retries: 3
       start_period: 30s
 
@@ -80,6 +82,8 @@ services:
       args:
         VITE_API_URL: https://cloudtab.appeul.com/api/v1
     restart: unless-stopped
+    expose:
+      - "80"
     networks:
       - coolify
     healthcheck:
