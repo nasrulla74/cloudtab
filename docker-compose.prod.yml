@@ -17,8 +17,6 @@ services:
       context: ./backend
       dockerfile: Dockerfile.prod
     restart: unless-stopped
-    expose:
-      - "8000"
     depends_on:
       redis:
         condition: service_healthy
@@ -29,15 +27,7 @@ services:
       - "traefik.http.routers.cloudtab-api.rule=Host(`cloudtab.appeul.com`) && PathPrefix(`/api`)"
       - "traefik.http.routers.cloudtab-api.entrypoints=https"
       - "traefik.http.routers.cloudtab-api.tls=true"
-      - "traefik.http.routers.cloudtab-api.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.cloudtab-api.service=cloudtab-api"
       - "traefik.http.services.cloudtab-api.loadbalancer.server.port=8000"
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
 
   worker:
     build:
@@ -52,12 +42,6 @@ services:
       - coolify
     labels:
       - "traefik.enable=false"
-    healthcheck:
-      test: ["CMD", "pgrep", "-f", "celery"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
 
   beat:
     build:
@@ -72,12 +56,6 @@ services:
       - coolify
     labels:
       - "traefik.enable=false"
-    healthcheck:
-      test: ["CMD", "pgrep", "-f", "celery"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
 
   frontend:
     build:
@@ -86,16 +64,8 @@ services:
       args:
         VITE_API_URL: https://cloudtab.appeul.com/api/v1
     restart: unless-stopped
-    expose:
-      - "80"
     networks:
       - coolify
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:80"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
 
 networks:
   coolify:
