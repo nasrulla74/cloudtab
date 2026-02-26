@@ -369,6 +369,137 @@ def destroy_odoo_instance(self, instance_id: int) -> dict:
         db.close()
 
 
+LOCKED_KEYS = {"db_host", "db_port", "db_user", "db_password", "addons_path", "data_dir"}
+
+
+def _parse_odoo_conf(raw: str) -> dict:
+    """Parse odoo.conf INI text into a key-value dict."""
+    result = {}
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line or line.startswith("[") or line.startswith(";") or line.startswith("#"):
+            continue
+        if " = " in line:
+            key, _, value = line.partition(" = ")
+            result[key.strip()] = value.strip()
+    return result
+
+
+def _serialize_odoo_conf(config: dict) -> str:
+    """Serialize a key-value dict back to odoo.conf INI format."""
+    lines = ["[options]"]
+    for key, value in config.items():
+        lines.append(f"{key} = {value}")
+    return "\n".join(lines)
+
+
+@celery_app.task(
+    bind=True,
+    name="odoo.read_config",
+    autoretry_for=SSH_RETRYABLE,
+    retry_backoff=10,
+    retry_backoff_max=60,
+    retry_kwargs={"max_retries": 2},
+)
+def read_odoo_config(self, instance_id: int) -> dict:
+    """Read the current odoo.conf from the instance and return it as a key-value dict."""
+    task_id = self.request.id
+    tlog = TaskLogger(task_id, instance_id=instance_id)
+    update_task_log(task_id, "running")
+
+    db = get_sync_db()
+    try:
+        ssh, instance, _ = _get_ssh_for_instance(instance_id, db)
+
+        conf_path = f"/opt/cloudtab/{instance.container_name}/config/odoo.conf"
+        tlog.info("Reading config from %s", conf_path)
+        with ssh:
+            stdout, stderr, exit_code = ssh.execute(f"cat {conf_path}", timeout=15)
+
+        if exit_code != 0:
+            raise RuntimeError(f"Failed to read config: {stderr}")
+
+        config = _parse_odoo_conf(stdout)
+        result = {"config": config}
+        tlog.info("Config read successfully (%d keys)", len(config))
+        update_task_log(task_id, "success", result)
+        return result
+    except Exception as e:
+        result = {"error": str(e)}
+        tlog.error("Failed to read config: %s", e)
+        update_task_log(task_id, "failed", result)
+        return result
+    finally:
+        db.close()
+
+
+@celery_app.task(
+    bind=True,
+    name="odoo.apply_config",
+    autoretry_for=SSH_RETRYABLE,
+    retry_backoff=10,
+    retry_backoff_max=60,
+    retry_kwargs={"max_retries": 2},
+)
+def apply_odoo_config(self, instance_id: int, updates: dict) -> dict:
+    """Write updated config to odoo.conf and restart the Odoo container."""
+    task_id = self.request.id
+    tlog = TaskLogger(task_id, instance_id=instance_id)
+    update_task_log(task_id, "running")
+
+    db = get_sync_db()
+    try:
+        ssh, instance, _ = _get_ssh_for_instance(instance_id, db)
+
+        conf_path = f"/opt/cloudtab/{instance.container_name}/config/odoo.conf"
+
+        with ssh:
+            # Read and parse current config
+            tlog.info("Reading current config from %s", conf_path)
+            stdout, stderr, exit_code = ssh.execute(f"cat {conf_path}", timeout=15)
+            if exit_code != 0:
+                raise RuntimeError(f"Failed to read config: {stderr}")
+
+            current = _parse_odoo_conf(stdout)
+
+            # Merge updates (locked keys are preserved from current, user values override the rest)
+            merged = {**current}
+            for key, value in updates.items():
+                if key not in LOCKED_KEYS:
+                    merged[key] = value
+
+            # Write back
+            conf_content = _serialize_odoo_conf(merged)
+            tlog.info("Writing updated config (%d keys)", len(merged))
+            # Use printf with escaped content written via SFTP to avoid shell quoting issues
+            ssh.write_file(conf_path, conf_content)
+
+            # Restart Odoo container
+            tlog.info("Restarting container %s", instance.container_name)
+            _, stderr, exit_code = ssh.execute(
+                f"docker restart {instance.container_name}", timeout=60
+            )
+            if exit_code != 0:
+                raise RuntimeError(f"Failed to restart container: {stderr}")
+
+        # Persist only non-locked user overrides to DB
+        user_overrides = {k: v for k, v in updates.items() if k not in LOCKED_KEYS}
+        instance.odoo_config = json.dumps(user_overrides)
+        db.commit()
+
+        result = {"status": "applied", "keys_updated": len(user_overrides)}
+        tlog.info("Config applied and container restarted")
+        update_task_log(task_id, "success", result)
+        return result
+    except Exception as e:
+        result = {"error": str(e)}
+        tlog.error("Failed to apply config: %s", e)
+        update_task_log(task_id, "failed", result)
+        return result
+    finally:
+        db.close()
+
+
 @celery_app.task(
     bind=True,
     name="odoo.get_logs",

@@ -102,6 +102,23 @@ class SSHService:
         finally:
             sftp.close()
 
+    def write_file(self, remote_path: str, content: str) -> None:
+        """Write string content directly to a file on the remote server via SFTP.
+
+        Args:
+            remote_path: Absolute path on the remote server.
+            content: String content to write.
+        """
+        if self._client is None:
+            raise RuntimeError("SSH client is not connected. Call connect() first.")
+        sftp = self._client.open_sftp()
+        try:
+            logger.info("SFTP write: %s (%d bytes)", remote_path, len(content))
+            with sftp.open(remote_path, "w") as f:
+                f.write(content)
+        finally:
+            sftp.close()
+
     def close(self) -> None:
         """Close the SSH connection."""
         if self._client:

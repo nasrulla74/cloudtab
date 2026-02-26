@@ -7,6 +7,8 @@ import {
   restartInstance,
   deleteInstance,
   getInstanceLogs,
+  readInstanceConfig,
+  applyInstanceConfig,
   type OdooInstance,
 } from "../api/instances";
 import { listDomains, createDomain, issueSSL, deleteDomain, type Domain } from "../api/domains";
@@ -54,8 +56,14 @@ export default function InstanceDetailPage() {
   const [gitBranch, setGitBranch] = useState("main");
   const [gitDeployKey, setGitDeployKey] = useState("");
 
+  // Config tab state
+  const [configData, setConfigData] = useState<Record<string, string> | null>(null);
+  const [configEdits, setConfigEdits] = useState<Record<string, string>>({});
+  const [newParamKey, setNewParamKey] = useState("");
+  const [newParamValue, setNewParamValue] = useState("");
+
   // Active tab
-  const [activeTab, setActiveTab] = useState<"domains" | "backups" | "git" | "logs">("domains");
+  const [activeTab, setActiveTab] = useState<"domains" | "backups" | "git" | "logs" | "config">("domains");
 
   const loadData = useCallback(async () => {
     if (!id) return;
@@ -224,12 +232,24 @@ export default function InstanceDetailPage() {
             setLogs(parsed.logs);
             return;
           }
+          // Config read result
+          if (parsed.config && typeof parsed.config === "object") {
+            setConfigData(parsed.config as Record<string, string>);
+            setConfigEdits(parsed.config as Record<string, string>);
+            return;
+          }
+          // Config apply result — reload config after apply
+          if (parsed.status === "applied") {
+            handleReadConfig();
+            return;
+          }
         } catch {
-          /* not log data */
+          /* not structured data */
         }
       }
       loadData();
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [loadData, instance, navigate]
   );
 
@@ -245,11 +265,48 @@ export default function InstanceDetailPage() {
     return <div className="text-center py-12 text-gray-500">Instance not found</div>;
   }
 
+  const LOCKED_KEYS = new Set([
+    "db_host", "db_port", "db_user", "db_password", "addons_path", "data_dir",
+  ]);
+
+  const handleTabChange = (tab: typeof activeTab) => {
+    setActiveTab(tab);
+    if (tab === "config" && configData === null && !activeTaskId) {
+      // Auto-load config when tab is first opened
+      handleReadConfig();
+    }
+  };
+
+  const handleReadConfig = async () => {
+    if (!instance) return;
+    const t = await readInstanceConfig(instance.id);
+    setTaskLabel("Reading config");
+    setActiveTaskId(t.task_id);
+  };
+
+  const handleApplyConfig = async () => {
+    if (!instance) return;
+    const t = await applyInstanceConfig(instance.id, configEdits);
+    setTaskLabel("Applying config & restarting");
+    setActiveTaskId(t.task_id);
+  };
+
+  const handleAddParam = () => {
+    if (!newParamKey.trim() || LOCKED_KEYS.has(newParamKey.trim())) return;
+    setConfigEdits((prev) => ({ ...prev, [newParamKey.trim()]: newParamValue }));
+    if (configData) {
+      setConfigData((prev) => ({ ...prev!, [newParamKey.trim()]: newParamValue }));
+    }
+    setNewParamKey("");
+    setNewParamValue("");
+  };
+
   const tabs = [
     { key: "domains" as const, label: "Domains", count: domains.length },
     { key: "backups" as const, label: "Backups", count: records.length },
     { key: "git" as const, label: "Git Repo", count: gitRepo ? 1 : 0 },
     { key: "logs" as const, label: "Logs", count: null },
+    { key: "config" as const, label: "Config", count: null },
   ];
 
   return (
@@ -343,7 +400,7 @@ export default function InstanceDetailPage() {
           {tabs.map((tab) => (
             <button
               key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
+              onClick={() => handleTabChange(tab.key)}
               className={`pb-3 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === tab.key
                   ? "border-blue-600 text-blue-600"
@@ -694,6 +751,143 @@ export default function InstanceDetailPage() {
             <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500 text-sm">
               Click "View Logs" or "Refresh" to fetch container logs.
             </div>
+          )}
+        </div>
+      )}
+
+      {/* === CONFIG TAB === */}
+      {activeTab === "config" && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">odoo.conf Parameters</h3>
+            <div className="flex gap-2">
+              <button
+                onClick={handleReadConfig}
+                className="px-3 py-1.5 text-sm bg-gray-600 text-white rounded-md hover:bg-gray-700"
+              >
+                Refresh
+              </button>
+              {configData && (
+                <button
+                  onClick={handleApplyConfig}
+                  className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                >
+                  Apply &amp; Restart
+                </button>
+              )}
+            </div>
+          </div>
+
+          {!configData ? (
+            <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500 text-sm">
+              <p className="mb-1">Loading configuration from server…</p>
+              <p className="text-xs text-gray-400">
+                The config will appear once the task completes.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="bg-white rounded-lg shadow overflow-hidden mb-4">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase w-1/3">
+                        Key
+                      </th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                        Value
+                      </th>
+                      <th className="px-4 py-2 w-20" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {Object.entries(configData).map(([key, value]) => {
+                      const locked = LOCKED_KEYS.has(key);
+                      return (
+                        <tr key={key} className={locked ? "bg-gray-50" : ""}>
+                          <td className="px-4 py-2.5 text-sm font-mono text-gray-700">
+                            {key}
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <input
+                              type="text"
+                              disabled={locked}
+                              value={locked ? value : (configEdits[key] ?? value)}
+                              onChange={(e) =>
+                                setConfigEdits((prev) => ({ ...prev, [key]: e.target.value }))
+                              }
+                              className={`w-full px-2 py-1 text-sm border rounded font-mono ${
+                                locked
+                                  ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                                  : "border-gray-300 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              }`}
+                            />
+                          </td>
+                          <td className="px-4 py-2.5 text-right">
+                            {locked ? (
+                              <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
+                                locked
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  const { [key]: _, ...rest } = configEdits;
+                                  setConfigEdits(rest);
+                                  const { [key]: __, ...restData } = configData;
+                                  setConfigData(restData);
+                                }}
+                                className="text-xs text-red-500 hover:text-red-700"
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Add new parameter row */}
+              <div className="bg-white rounded-lg shadow p-4">
+                <p className="text-xs font-medium text-gray-500 uppercase mb-3">
+                  Add Custom Parameter
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newParamKey}
+                    onChange={(e) => setNewParamKey(e.target.value)}
+                    placeholder="key (e.g. list_db)"
+                    className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-md font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                  <input
+                    type="text"
+                    value={newParamValue}
+                    onChange={(e) => setNewParamValue(e.target.value)}
+                    placeholder="value"
+                    className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-md font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                  <button
+                    onClick={handleAddParam}
+                    disabled={!newParamKey.trim() || LOCKED_KEYS.has(newParamKey.trim())}
+                    className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Add
+                  </button>
+                </div>
+                {LOCKED_KEYS.has(newParamKey.trim()) && newParamKey.trim() && (
+                  <p className="text-xs text-red-500 mt-1">
+                    "{newParamKey.trim()}" is managed by CloudTab and cannot be overridden.
+                  </p>
+                )}
+              </div>
+
+              <p className="mt-3 text-xs text-gray-400">
+                Locked keys are managed by CloudTab. Changes take effect after "Apply &amp; Restart".
+              </p>
+            </>
           )}
         </div>
       )}

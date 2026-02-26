@@ -80,3 +80,16 @@ export async function getInstanceLogs(id: number, tail = 200): Promise<TaskTrigg
   const res = await client.get(`/instances/${id}/logs?tail=${tail}`);
   return res.data;
 }
+
+export async function readInstanceConfig(id: number): Promise<TaskTrigger> {
+  const res = await client.post(`/instances/${id}/config/read`);
+  return res.data;
+}
+
+export async function applyInstanceConfig(
+  id: number,
+  updates: Record<string, string>
+): Promise<TaskTrigger> {
+  const res = await client.post(`/instances/${id}/config/apply`, { updates });
+  return res.data;
+}
