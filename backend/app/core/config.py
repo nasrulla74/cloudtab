@@ -1,3 +1,4 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -7,6 +8,23 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://cloudtab:cloudtab_dev@localhost:5432/cloudtab"
     DATABASE_URL_SYNC: str = "postgresql+psycopg2://cloudtab:cloudtab_dev@localhost:5432/cloudtab"
+
+    @model_validator(mode="after")
+    def _normalise_db_urls(self) -> "Settings":
+        # Accept legacy postgres:// or plain postgresql:// and upgrade to the
+        # correct SQLAlchemy 2.x async dialect string.
+        for old, new in (
+            ("postgres://", "postgresql+asyncpg://"),
+            ("postgresql://", "postgresql+asyncpg://"),
+        ):
+            if self.DATABASE_URL.startswith(old):
+                self.DATABASE_URL = self.DATABASE_URL.replace(old, new, 1)
+                break
+
+        # Always derive the sync URL from the (now normalised) async URL so
+        # only DATABASE_URL needs to be set in the environment.
+        self.DATABASE_URL_SYNC = self.DATABASE_URL.replace("+asyncpg", "+psycopg2", 1)
+        return self
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
