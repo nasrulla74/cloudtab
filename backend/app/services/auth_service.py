@@ -5,9 +5,13 @@ from app.core.security import create_access_token, create_refresh_token, hash_pa
 from app.models.user import User
 
 
-async def authenticate_user(db: AsyncSession, email: str, password: str) -> User | None:
+async def get_user_by_email(db: AsyncSession, email: str) -> User | None:
     result = await db.execute(select(User).where(User.email == email))
-    user = result.scalar_one_or_none()
+    return result.scalar_one_or_none()
+
+
+async def authenticate_user(db: AsyncSession, email: str, password: str) -> User | None:
+    user = await get_user_by_email(db, email)
     if user is None or not verify_password(password, user.hashed_password):
         return None
     return user

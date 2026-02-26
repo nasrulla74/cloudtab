@@ -31,3 +31,8 @@ export async function setupAdmin(email: string, password: string) {
   const res = await client.post("/auth/setup", { email, password });
   return res.data;
 }
+
+export async function register(email: string, password: string) {
+  const res = await client.post("/auth/register", { email, password });
+  return res.data;
+}

@@ -7,7 +7,7 @@ from app.core.database import get_db
 from app.core.security import decode_token
 from app.models.user import User
 from app.schemas.auth import LoginRequest, RefreshRequest, TokenResponse
-from app.services.auth_service import authenticate_user, create_tokens, create_user
+from app.services.auth_service import authenticate_user, create_tokens, create_user, get_user_by_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -41,6 +41,19 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
         )
+    return create_tokens(user)
+
+
+@router.post("/register", response_model=TokenResponse)
+async def register(body: LoginRequest, db: AsyncSession = Depends(get_db)):
+    """Create a new user account."""
+    existing = await get_user_by_email(db, body.email)
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered",
+        )
+    user = await create_user(db, body.email, body.password)
     return create_tokens(user)
 
 

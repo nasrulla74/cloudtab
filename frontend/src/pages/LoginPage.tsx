@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { checkSetupRequired } from "../api/auth";
+import { checkSetupRequired, register as registerUser } from "../api/auth";
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login, loadUser } = useAuth();
   const navigate = useNavigate();
+  const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -25,13 +26,28 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      await login(email, password);
-      navigate("/dashboard");
-    } catch {
-      setError("Invalid email or password");
+      if (mode === "register") {
+        const data = await registerUser(email, password);
+        localStorage.setItem("access_token", data.access_token);
+        localStorage.setItem("refresh_token", data.refresh_token);
+        await loadUser();
+        navigate("/dashboard");
+      } else {
+        await login(email, password);
+        navigate("/dashboard");
+      }
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setError(msg ?? (mode === "register" ? "Registration failed" : "Invalid email or password"));
     } finally {
       setLoading(false);
     }
+  };
+
+  const toggleMode = () => {
+    setMode((m) => (m === "login" ? "register" : "login"));
+    setError("");
   };
 
   return (
@@ -39,6 +55,9 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <h1 className="text-2xl font-bold text-center mb-8">CloudTab</h1>
         <form onSubmit={handleSubmit} className="bg-white shadow rounded-lg p-6 space-y-4">
+          <h2 className="text-lg font-semibold text-gray-800">
+            {mode === "login" ? "Sign in" : "Create account"}
+          </h2>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
             <input
@@ -65,9 +84,40 @@ export default function LoginPage() {
             disabled={loading}
             className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
           >
-            {loading ? "Signing in..." : "Sign in"}
+            {loading
+              ? mode === "login"
+                ? "Signing in..."
+                : "Creating account..."
+              : mode === "login"
+              ? "Sign in"
+              : "Create account"}
           </button>
-          {setupRequired && (
+          <p className="text-center text-sm text-gray-500">
+            {mode === "login" ? (
+              <>
+                Don't have an account?{" "}
+                <button
+                  type="button"
+                  onClick={toggleMode}
+                  className="text-blue-600 hover:underline"
+                >
+                  Sign up →
+                </button>
+              </>
+            ) : (
+              <>
+                Already have an account?{" "}
+                <button
+                  type="button"
+                  onClick={toggleMode}
+                  className="text-blue-600 hover:underline"
+                >
+                  Sign in →
+                </button>
+              </>
+            )}
+          </p>
+          {setupRequired && mode === "login" && (
             <p className="text-center text-sm text-gray-500">
               No account yet?{" "}
               <Link to="/setup" className="text-blue-600 hover:underline">
