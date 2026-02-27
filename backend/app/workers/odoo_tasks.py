@@ -84,6 +84,7 @@ def deploy_odoo_instance(self, instance_id: int) -> dict:
                 ssh.execute(f"docker stop {pg_name} 2>/dev/null; docker rm {pg_name} 2>/dev/null", timeout=30)
 
                 # Deploy PostgreSQL container
+                # POSTGRES_DB=odoo creates the 'odoo' database on first start.
                 tlog.info("Starting PostgreSQL container %s", pg_name)
                 pg_cmd = (
                     f"docker run -d"
@@ -92,7 +93,7 @@ def deploy_odoo_instance(self, instance_id: int) -> dict:
                     f" --restart unless-stopped"
                     f" -e POSTGRES_USER=odoo"
                     f" -e POSTGRES_PASSWORD={pg_password}"
-                    f" -e POSTGRES_DB=postgres"
+                    f" -e POSTGRES_DB=odoo"
                     f" -v /opt/cloudtab/{odoo_name}/pgdata:/var/lib/postgresql/data"
                     f" postgres:16-alpine"
                 )
@@ -113,6 +114,7 @@ def deploy_odoo_instance(self, instance_id: int) -> dict:
                     "db_port = 5432",
                     "db_user = odoo",
                     f"db_password = {pg_password}",
+                    "db_name = odoo",
                     f"addons_path = /mnt/extra-addons",
                     "data_dir = /var/lib/odoo",
                 ]
@@ -132,9 +134,28 @@ def deploy_odoo_instance(self, instance_id: int) -> dict:
                     timeout=10,
                 )
 
+                odoo_image = f"odoo:{odoo_version}"
+
+                # Initialize the Odoo database before starting the live container.
+                # This installs the base schema (ir_module_module, ir.http, etc.)
+                # so Odoo can serve requests immediately on first boot.
+                tlog.info("Initializing Odoo database (this may take a few minutes)")
+                init_cmd = (
+                    f"docker run --rm"
+                    f" --network {network_name}"
+                    f" -v /opt/cloudtab/{odoo_name}/data:/var/lib/odoo"
+                    f" -v /opt/cloudtab/{odoo_name}/addons:/mnt/extra-addons"
+                    f" -v /opt/cloudtab/{odoo_name}/config/odoo.conf:/etc/odoo/odoo.conf"
+                    f" {odoo_image}"
+                    f" odoo --database=odoo --init=base --stop-after-init"
+                )
+                stdout, stderr, exit_code = ssh.execute(init_cmd, timeout=600)
+                if exit_code != 0:
+                    raise RuntimeError(f"Failed to initialize Odoo database: {stderr}")
+                tlog.info("Database initialization complete")
+
                 # Deploy Odoo container
                 tlog.info("Starting Odoo container %s (image odoo:%s)", odoo_name, odoo_version)
-                odoo_image = f"odoo:{odoo_version}"
                 odoo_cmd = (
                     f"docker run -d"
                     f" --name {odoo_name}"
@@ -146,7 +167,7 @@ def deploy_odoo_instance(self, instance_id: int) -> dict:
                     f" -v /opt/cloudtab/{odoo_name}/config/odoo.conf:/etc/odoo/odoo.conf"
                     f" {odoo_image}"
                 )
-                stdout, stderr, exit_code = ssh.execute(odoo_cmd, timeout=180)
+                stdout, stderr, exit_code = ssh.execute(odoo_cmd, timeout=60)
                 if exit_code != 0:
                     raise RuntimeError(f"Failed to start Odoo: {stderr}")
 
@@ -369,7 +390,7 @@ def destroy_odoo_instance(self, instance_id: int) -> dict:
         db.close()
 
 
-LOCKED_KEYS = {"db_host", "db_port", "db_user", "db_password", "addons_path", "data_dir"}
+LOCKED_KEYS = {"db_host", "db_port", "db_user", "db_password", "db_name", "addons_path", "data_dir"}
 
 
 def _parse_odoo_conf(raw: str) -> dict:
