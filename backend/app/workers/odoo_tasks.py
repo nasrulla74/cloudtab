@@ -184,6 +184,26 @@ def deploy_odoo_instance(self, instance_id: int) -> dict:
                     # Non-fatal: image might already be present; log the warning and continue
                     tlog.warning("docker pull exited %d: %s", pull_exit, pull_stderr)
 
+                # Guarantee correct ownership on the data volume using Docker.
+                #
+                # The early chown/chmod attempt above silently fails in two cases:
+                #   1. SSH user is not root → cannot chown to uid 101
+                #   2. The directory was previously created by root → non-root SSH
+                #      user cannot even chmod it
+                # Running a helper container as root (--user root) bypasses both
+                # problems: Docker root always has permission to chown files inside
+                # host-mounted volumes regardless of the SSH user's privileges.
+                tlog.info("Fixing data volume ownership via Docker")
+                _, fix_stderr, fix_exit = ssh.execute(
+                    f"docker run --rm --user root --entrypoint chown"
+                    f" -v /opt/cloudtab/{odoo_name}/data:/var/lib/odoo"
+                    f" -v /opt/cloudtab/{odoo_name}/addons:/mnt/extra-addons"
+                    f" {odoo_image} -R 101:101 /var/lib/odoo /mnt/extra-addons",
+                    timeout=60,
+                )
+                if fix_exit != 0:
+                    tlog.warning("Docker-based chown failed: %s", fix_stderr)
+
                 # Initialize the Odoo database using a detached container.
                 #
                 # We MUST NOT use `docker run --rm` (blocking) here because Odoo's
