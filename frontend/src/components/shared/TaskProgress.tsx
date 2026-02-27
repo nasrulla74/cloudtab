@@ -8,6 +8,8 @@ interface TaskProgressProps {
   label?: string;
   /** Auto-dismiss success after N ms (0 = never). Default: 3000 */
   autoDismissMs?: number;
+  /** How long task must stay "pending" before showing the stuck warning (default: 30000) */
+  stuckPendingMs?: number;
 }
 
 export default function TaskProgress({
@@ -15,8 +17,11 @@ export default function TaskProgress({
   onComplete,
   label,
   autoDismissMs = 3000,
+  stuckPendingMs,
 }: TaskProgressProps) {
-  const { task, isPolling, isStuck, error, startPolling, reset } = useTaskPoller(onComplete);
+  const { task, isPolling, isStuck, error, startPolling, reset } = useTaskPoller(onComplete, {
+    stuckPendingMs,
+  });
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {

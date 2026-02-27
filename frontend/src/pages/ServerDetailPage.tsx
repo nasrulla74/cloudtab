@@ -20,6 +20,7 @@ export default function ServerDetailPage() {
   const [loading, setLoading] = useState(true);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [taskLabel, setTaskLabel] = useState("");
+  const [taskStuckMs, setTaskStuckMs] = useState<number>(30_000);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const isTaskActive = activeTaskId !== null;
@@ -46,6 +47,7 @@ export default function ServerDetailPage() {
     try {
       const t = await testConnection(server.id);
       setTaskLabel("Test Connection");
+      setTaskStuckMs(30_000);
       setActiveTaskId(t.task_id);
     } catch (err: unknown) {
       setActionError(err instanceof Error ? err.message : "Failed to start connection test");
@@ -58,6 +60,7 @@ export default function ServerDetailPage() {
     try {
       const t = await fetchSystemInfo(server.id);
       setTaskLabel("System Info");
+      setTaskStuckMs(90_000);
       setActiveTaskId(t.task_id);
     } catch (err: unknown) {
       setActionError(err instanceof Error ? err.message : "Failed to start system info fetch");
@@ -70,6 +73,7 @@ export default function ServerDetailPage() {
     try {
       const t = await installDeps(server.id);
       setTaskLabel("Install Dependencies");
+      setTaskStuckMs(300_000);
       setActiveTaskId(t.task_id);
     } catch (err: unknown) {
       setActionError(err instanceof Error ? err.message : "Failed to start installation");
@@ -147,6 +151,7 @@ export default function ServerDetailPage() {
         taskId={activeTaskId}
         onComplete={() => { setActiveTaskId(null); loadData(); }}
         label={taskLabel}
+        stuckPendingMs={taskStuckMs}
       />
 
       {/* Server Info */}
