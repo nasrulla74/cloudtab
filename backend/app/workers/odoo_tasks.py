@@ -70,10 +70,23 @@ def deploy_odoo_instance(self, instance_id: int) -> dict:
 
                 # Odoo container runs as uid 101 (odoo user) — fix ownership so it
                 # can write sessions, filestore, etc.
-                ssh.execute(
+                # chown only works when the SSH user is root; if it fails (non-root
+                # SSH user such as "ubuntu"), fall back to chmod 777 so uid 101 can
+                # still write to the volume.  Without this the init step fails with:
+                #   PermissionError: [Errno 13] Permission denied: '/var/lib/odoo/filestore'
+                _, _, chown_exit = ssh.execute(
                     f"chown -R 101:101 /opt/cloudtab/{odoo_name}/data /opt/cloudtab/{odoo_name}/addons",
                     timeout=10,
                 )
+                if chown_exit != 0:
+                    tlog.warning(
+                        "chown to uid 101 failed (SSH user may not be root) — "
+                        "falling back to chmod 777 on data/addons directories"
+                    )
+                    ssh.execute(
+                        f"chmod -R 777 /opt/cloudtab/{odoo_name}/data /opt/cloudtab/{odoo_name}/addons",
+                        timeout=10,
+                    )
 
                 # Fail fast if the requested host port is already bound.
                 # Without this check the deploy runs for several minutes (image pull,
