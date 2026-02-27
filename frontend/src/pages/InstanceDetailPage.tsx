@@ -38,7 +38,11 @@ export default function InstanceDetailPage() {
   const [loading, setLoading] = useState(true);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [taskLabel, setTaskLabel] = useState("");
+  const [taskStuckMs, setTaskStuckMs] = useState(60_000);
+  const [taskError, setTaskError] = useState<string | null>(null);
   const [logs, setLogs] = useState<string | null>(null);
+
+  const isTaskActive = activeTaskId !== null;
 
   // Modal states
   const [showDomainModal, setShowDomainModal] = useState(false);
@@ -90,49 +94,85 @@ export default function InstanceDetailPage() {
     loadData();
   }, [loadData]);
 
-  const runAction = async (action: () => Promise<{ task_id: string }>, label: string) => {
-    const t = await action();
-    setTaskLabel(label);
-    setActiveTaskId(t.task_id);
+  const runAction = async (
+    action: () => Promise<{ task_id: string }>,
+    label: string,
+    stuckMs = 60_000,
+  ) => {
+    if (isTaskActive) return;
+    setTaskError(null);
+    try {
+      const t = await action();
+      setTaskLabel(label);
+      setTaskStuckMs(stuckMs);
+      setActiveTaskId(t.task_id);
+    } catch (err: unknown) {
+      setTaskError(err instanceof Error ? err.message : `Failed to start: ${label}`);
+    }
   };
 
   const handleGetLogs = async () => {
-    if (!instance) return;
+    if (!instance || isTaskActive) return;
+    setTaskError(null);
     setLogs("Loading...");
     setActiveTab("logs");
-    const t = await getInstanceLogs(instance.id);
-    setTaskLabel("Fetching Logs");
-    setActiveTaskId(t.task_id);
+    try {
+      const t = await getInstanceLogs(instance.id);
+      setTaskLabel("Fetching Logs");
+      setTaskStuckMs(30_000);
+      setActiveTaskId(t.task_id);
+    } catch (err: unknown) {
+      setTaskError(err instanceof Error ? err.message : "Failed to fetch logs");
+    }
   };
 
   const handleDeleteInstance = async () => {
-    if (!instance) return;
+    if (!instance || isTaskActive) return;
     if (
       !confirm(
         `Are you sure you want to delete "${instance.name}"? This will stop and remove all containers and data from the server. This action cannot be undone.`
       )
     )
       return;
-    const t = await deleteInstance(instance.id);
-    setTaskLabel("Destroying instance");
-    setActiveTaskId(t.task_id);
+    setTaskError(null);
+    try {
+      const t = await deleteInstance(instance.id);
+      setTaskLabel("Destroying instance");
+      setTaskStuckMs(120_000);
+      setActiveTaskId(t.task_id);
+    } catch (err: unknown) {
+      setTaskError(err instanceof Error ? err.message : "Failed to delete instance");
+    }
   };
 
   // --- Domain handlers ---
   const handleAddDomain = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!instance || !domainName) return;
-    const t = await createDomain(instance.id, domainName);
-    setShowDomainModal(false);
-    setDomainName("");
-    setTaskLabel("Setting up domain");
-    setActiveTaskId(t.task_id);
+    setTaskError(null);
+    try {
+      const t = await createDomain(instance.id, domainName);
+      setShowDomainModal(false);
+      setDomainName("");
+      setTaskLabel("Setting up domain");
+      setTaskStuckMs(60_000);
+      setActiveTaskId(t.task_id);
+    } catch (err: unknown) {
+      setTaskError(err instanceof Error ? err.message : "Failed to set up domain");
+    }
   };
 
   const handleIssueSSL = async (domainId: number) => {
-    const t = await issueSSL(domainId);
-    setTaskLabel("Issuing SSL");
-    setActiveTaskId(t.task_id);
+    if (isTaskActive) return;
+    setTaskError(null);
+    try {
+      const t = await issueSSL(domainId);
+      setTaskLabel("Issuing SSL");
+      setTaskStuckMs(120_000);
+      setActiveTaskId(t.task_id);
+    } catch (err: unknown) {
+      setTaskError(err instanceof Error ? err.message : "Failed to issue SSL certificate");
+    }
   };
 
   const handleDeleteDomain = async (domainId: number) => {
@@ -168,10 +208,16 @@ export default function InstanceDetailPage() {
   };
 
   const handleTriggerBackup = async () => {
-    if (!instance) return;
-    const t = await triggerBackup(instance.id);
-    setTaskLabel("Running backup");
-    setActiveTaskId(t.task_id);
+    if (!instance || isTaskActive) return;
+    setTaskError(null);
+    try {
+      const t = await triggerBackup(instance.id);
+      setTaskLabel("Running backup");
+      setTaskStuckMs(300_000);
+      setActiveTaskId(t.task_id);
+    } catch (err: unknown) {
+      setTaskError(err instanceof Error ? err.message : "Failed to start backup");
+    }
   };
 
   const handleRestoreBackup = async (recordId: number) => {
@@ -182,9 +228,15 @@ export default function InstanceDetailPage() {
       )
     )
       return;
-    const t = await restoreBackup(recordId);
-    setTaskLabel("Restoring backup");
-    setActiveTaskId(t.task_id);
+    setTaskError(null);
+    try {
+      const t = await restoreBackup(recordId);
+      setTaskLabel("Restoring backup");
+      setTaskStuckMs(300_000);
+      setActiveTaskId(t.task_id);
+    } catch (err: unknown) {
+      setTaskError(err instanceof Error ? err.message : "Failed to start restore");
+    }
   };
 
   // --- Git handlers ---
@@ -210,10 +262,16 @@ export default function InstanceDetailPage() {
   };
 
   const handleDeployModules = async () => {
-    if (!gitRepo) return;
-    const t = await deployModules(gitRepo.id);
-    setTaskLabel("Deploying modules");
-    setActiveTaskId(t.task_id);
+    if (!gitRepo || isTaskActive) return;
+    setTaskError(null);
+    try {
+      const t = await deployModules(gitRepo.id);
+      setTaskLabel("Deploying modules");
+      setTaskStuckMs(120_000);
+      setActiveTaskId(t.task_id);
+    } catch (err: unknown) {
+      setTaskError(err instanceof Error ? err.message : "Failed to deploy modules");
+    }
   };
 
   // --- Task complete ---
@@ -266,7 +324,7 @@ export default function InstanceDetailPage() {
   }
 
   const LOCKED_KEYS = new Set([
-    "db_host", "db_port", "db_user", "db_password", "addons_path", "data_dir",
+    "db_host", "db_port", "db_user", "db_password", "db_name", "addons_path", "data_dir",
   ]);
 
   const handleTabChange = (tab: typeof activeTab) => {
@@ -278,17 +336,29 @@ export default function InstanceDetailPage() {
   };
 
   const handleReadConfig = async () => {
-    if (!instance) return;
-    const t = await readInstanceConfig(instance.id);
-    setTaskLabel("Reading config");
-    setActiveTaskId(t.task_id);
+    if (!instance || isTaskActive) return;
+    setTaskError(null);
+    try {
+      const t = await readInstanceConfig(instance.id);
+      setTaskLabel("Reading config");
+      setTaskStuckMs(30_000);
+      setActiveTaskId(t.task_id);
+    } catch (err: unknown) {
+      setTaskError(err instanceof Error ? err.message : "Failed to read config");
+    }
   };
 
   const handleApplyConfig = async () => {
-    if (!instance) return;
-    const t = await applyInstanceConfig(instance.id, configEdits);
-    setTaskLabel("Applying config & restarting");
-    setActiveTaskId(t.task_id);
+    if (!instance || isTaskActive) return;
+    setTaskError(null);
+    try {
+      const t = await applyInstanceConfig(instance.id, configEdits);
+      setTaskLabel("Applying config & restarting");
+      setTaskStuckMs(60_000);
+      setActiveTaskId(t.task_id);
+    } catch (err: unknown) {
+      setTaskError(err instanceof Error ? err.message : "Failed to apply config");
+    }
   };
 
   const handleAddParam = () => {
@@ -330,11 +400,12 @@ export default function InstanceDetailPage() {
       </div>
 
       {/* Actions bar */}
-      <div className="flex flex-wrap gap-2 mb-6">
+      <div className="flex flex-wrap gap-2 mb-4">
         {instance.status === "stopped" && (
           <button
-            onClick={() => runAction(() => startInstance(instance.id), "Starting")}
-            className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700"
+            onClick={() => runAction(() => startInstance(instance.id), "Starting", 90_000)}
+            disabled={isTaskActive}
+            className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Start
           </button>
@@ -342,14 +413,16 @@ export default function InstanceDetailPage() {
         {instance.status === "running" && (
           <>
             <button
-              onClick={() => runAction(() => stopInstance(instance.id), "Stopping")}
-              className="px-3 py-1.5 text-sm bg-yellow-600 text-white rounded-md hover:bg-yellow-700"
+              onClick={() => runAction(() => stopInstance(instance.id), "Stopping", 60_000)}
+              disabled={isTaskActive}
+              className="px-3 py-1.5 text-sm bg-yellow-600 text-white rounded-md hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Stop
             </button>
             <button
-              onClick={() => runAction(() => restartInstance(instance.id), "Restarting")}
-              className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              onClick={() => runAction(() => restartInstance(instance.id), "Restarting", 90_000)}
+              disabled={isTaskActive}
+              className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Restart
             </button>
@@ -357,19 +430,32 @@ export default function InstanceDetailPage() {
         )}
         <button
           onClick={handleGetLogs}
-          className="px-3 py-1.5 text-sm bg-gray-600 text-white rounded-md hover:bg-gray-700"
+          disabled={isTaskActive}
+          className="px-3 py-1.5 text-sm bg-gray-600 text-white rounded-md hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           View Logs
         </button>
         <button
           onClick={handleDeleteInstance}
-          className="px-3 py-1.5 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 ml-auto"
+          disabled={isTaskActive}
+          className="px-3 py-1.5 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 ml-auto disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Delete Instance
         </button>
       </div>
 
-      <TaskProgress taskId={activeTaskId} onComplete={handleTaskComplete} label={taskLabel} />
+      {taskError && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-600">
+          {taskError}
+        </div>
+      )}
+
+      <TaskProgress
+        taskId={activeTaskId}
+        onComplete={handleTaskComplete}
+        label={taskLabel}
+        stuckPendingMs={taskStuckMs}
+      />
 
       {/* Instance Info Card */}
       <div className="bg-white rounded-lg shadow p-5 mt-4 mb-6">
