@@ -10,6 +10,9 @@ interface TaskProgressProps {
   autoDismissMs?: number;
   /** How long task must stay "pending" before showing the stuck warning (default: 30000) */
   stuckPendingMs?: number;
+  /** Stop polling after this many ms. Default: 300000 (5 min). Use a larger value for
+   *  long-running tasks like Odoo deploy which can take 15-20 min. */
+  pollingTimeoutMs?: number;
 }
 
 export default function TaskProgress({
@@ -18,9 +21,11 @@ export default function TaskProgress({
   label,
   autoDismissMs = 3000,
   stuckPendingMs,
+  pollingTimeoutMs,
 }: TaskProgressProps) {
   const { task, isPolling, isStuck, error, startPolling, reset } = useTaskPoller(onComplete, {
     stuckPendingMs,
+    ...(pollingTimeoutMs !== undefined && { timeout: pollingTimeoutMs }),
   });
   const [visible, setVisible] = useState(false);
 

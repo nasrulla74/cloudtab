@@ -46,10 +46,19 @@ export default function InstanceDeployPage() {
           <TaskProgress
             taskId={deployTaskId}
             label="Deploying Odoo"
-            onComplete={() => navigate(`/servers/${serverId}`)}
+            pollingTimeoutMs={30 * 60 * 1000}
+            stuckPendingMs={120_000}
+            onComplete={(task) => {
+              // Only navigate away on success — on failure stay here so the
+              // error message in the TaskProgress banner remains visible.
+              if (task.status === "success") {
+                navigate(`/servers/${serverId}`);
+              }
+            }}
           />
           <p className="text-sm text-gray-500">
-            This may take a few minutes while Docker images are pulled...
+            This may take 10–20 minutes on first deploy while the Docker image
+            is pulled and the Odoo database is initialised.
           </p>
         </div>
       ) : (
