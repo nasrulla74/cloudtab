@@ -20,6 +20,9 @@ export default function ServerDetailPage() {
   const [loading, setLoading] = useState(true);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [taskLabel, setTaskLabel] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const isTaskActive = activeTaskId !== null;
 
   const loadData = useCallback(async () => {
     if (!id) return;
@@ -38,30 +41,49 @@ export default function ServerDetailPage() {
   useEffect(() => { loadData(); }, [loadData]);
 
   const handleTestConnection = async () => {
-    if (!server) return;
-    const t = await testConnection(server.id);
-    setTaskLabel("Test Connection");
-    setActiveTaskId(t.task_id);
+    if (!server || isTaskActive) return;
+    setActionError(null);
+    try {
+      const t = await testConnection(server.id);
+      setTaskLabel("Test Connection");
+      setActiveTaskId(t.task_id);
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : "Failed to start connection test");
+    }
   };
 
   const handleSystemInfo = async () => {
-    if (!server) return;
-    const t = await fetchSystemInfo(server.id);
-    setTaskLabel("System Info");
-    setActiveTaskId(t.task_id);
+    if (!server || isTaskActive) return;
+    setActionError(null);
+    try {
+      const t = await fetchSystemInfo(server.id);
+      setTaskLabel("System Info");
+      setActiveTaskId(t.task_id);
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : "Failed to start system info fetch");
+    }
   };
 
   const handleInstallDeps = async () => {
-    if (!server) return;
-    const t = await installDeps(server.id);
-    setTaskLabel("Install Dependencies");
-    setActiveTaskId(t.task_id);
+    if (!server || isTaskActive) return;
+    setActionError(null);
+    try {
+      const t = await installDeps(server.id);
+      setTaskLabel("Install Dependencies");
+      setActiveTaskId(t.task_id);
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : "Failed to start installation");
+    }
   };
 
   const handleDelete = async () => {
     if (!server || !confirm("Delete this server and all its instances?")) return;
-    await deleteServer(server.id);
-    navigate("/servers");
+    try {
+      await deleteServer(server.id);
+      navigate("/servers");
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : "Failed to delete server");
+    }
   };
 
   if (loading) {
@@ -91,19 +113,41 @@ export default function ServerDetailPage() {
       </div>
 
       {/* Actions */}
-      <div className="flex flex-wrap gap-2 mb-6">
-        <button onClick={handleTestConnection} className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700">
+      <div className="flex flex-wrap gap-2 mb-4">
+        <button
+          onClick={handleTestConnection}
+          disabled={isTaskActive}
+          className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
           Test Connection
         </button>
-        <button onClick={handleSystemInfo} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700">
+        <button
+          onClick={handleSystemInfo}
+          disabled={isTaskActive}
+          className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
           Refresh System Info
         </button>
-        <button onClick={handleInstallDeps} className="px-3 py-1.5 text-sm bg-purple-600 text-white rounded-md hover:bg-purple-700">
+        <button
+          onClick={handleInstallDeps}
+          disabled={isTaskActive}
+          className="px-3 py-1.5 text-sm bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
           Install Docker/Nginx/Certbot
         </button>
       </div>
 
-      <TaskProgress taskId={activeTaskId} onComplete={() => { setActiveTaskId(null); loadData(); }} label={taskLabel} />
+      {actionError && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-600">
+          {actionError}
+        </div>
+      )}
+
+      <TaskProgress
+        taskId={activeTaskId}
+        onComplete={() => { setActiveTaskId(null); loadData(); }}
+        label={taskLabel}
+      />
 
       {/* Server Info */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6 mb-8">

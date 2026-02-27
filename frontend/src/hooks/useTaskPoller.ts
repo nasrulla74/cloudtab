@@ -12,11 +12,15 @@ interface PollerOptions {
   timeout?: number;
   /** Max consecutive errors before stopping (default: 10) */
   maxErrors?: number;
+  /** How long a task must stay "pending" before isStuck becomes true (default: 30000) */
+  stuckPendingMs?: number;
 }
 
 interface UseTaskPollerResult {
   task: TaskStatus | null;
   isPolling: boolean;
+  /** True when the task has been in "pending" status for longer than stuckPendingMs */
+  isStuck: boolean;
   error: string | null;
   startPolling: (taskId: string) => void;
   reset: () => void;
@@ -28,6 +32,7 @@ const DEFAULTS: Required<PollerOptions> = {
   backoffFactor: 1.5,
   timeout: 300000,
   maxErrors: 10,
+  stuckPendingMs: 30000,
 };
 
 export function useTaskPoller(
@@ -39,12 +44,14 @@ export function useTaskPoller(
   const [taskId, setTaskId] = useState<string | null>(null);
   const [task, setTask] = useState<TaskStatus | null>(null);
   const [isPolling, setIsPolling] = useState(false);
+  const [isStuck, setIsStuck] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Use refs for mutable values that shouldn't trigger re-renders
   const intervalRef = useRef(opts.initialInterval);
   const errorCountRef = useRef(0);
   const startTimeRef = useRef(0);
+  const pendingStartRef = useRef(0);
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
 
@@ -54,9 +61,11 @@ export function useTaskPoller(
       setTask(null);
       setError(null);
       setIsPolling(true);
+      setIsStuck(false);
       intervalRef.current = opts.initialInterval;
       errorCountRef.current = 0;
       startTimeRef.current = Date.now();
+      pendingStartRef.current = Date.now();
     },
     [opts.initialInterval]
   );
@@ -66,6 +75,7 @@ export function useTaskPoller(
     setTask(null);
     setError(null);
     setIsPolling(false);
+    setIsStuck(false);
   }, []);
 
   useEffect(() => {
@@ -91,8 +101,20 @@ export function useTaskPoller(
 
         if (status.status === "success" || status.status === "failed") {
           setIsPolling(false);
+          setIsStuck(false);
           onCompleteRef.current?.(status);
           return;
+        }
+
+        // Detect stuck pending: task hasn't moved to "running" for too long
+        if (status.status === "pending") {
+          if (Date.now() - pendingStartRef.current > opts.stuckPendingMs) {
+            setIsStuck(true);
+          }
+        } else {
+          // Task is progressing — reset stuck flag and pending timer
+          pendingStartRef.current = Date.now();
+          setIsStuck(false);
         }
 
         // Task is still running — use shorter interval
@@ -131,7 +153,7 @@ export function useTaskPoller(
       cancelled = true;
       clearTimeout(timerId);
     };
-  }, [taskId, isPolling, opts.timeout, opts.maxErrors, opts.backoffFactor, opts.maxInterval, opts.initialInterval]);
+  }, [taskId, isPolling, opts.timeout, opts.maxErrors, opts.backoffFactor, opts.maxInterval, opts.initialInterval, opts.stuckPendingMs]);
 
-  return { task, isPolling, error, startPolling, reset };
+  return { task, isPolling, isStuck, error, startPolling, reset };
 }
