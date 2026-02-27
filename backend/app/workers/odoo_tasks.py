@@ -143,6 +143,18 @@ def deploy_odoo_instance(self, instance_id: int) -> dict:
                 odoo_image = f"odoo:{odoo_version}"
                 init_name = f"{odoo_name}-init"
 
+                # Pull the image explicitly before starting the init container.
+                # Without this, `docker run -d` would pull inline and the 120s SSH
+                # timeout fires before the pull completes for large images (odoo:18.0+
+                # is several GB on a fresh server).  We give the pull up to 10 minutes.
+                tlog.info("Pulling Odoo image %s (may take a few minutes on first deploy)", odoo_image)
+                _, pull_stderr, pull_exit = ssh.execute(
+                    f"docker pull {odoo_image}", timeout=600
+                )
+                if pull_exit != 0:
+                    # Non-fatal: image might already be present; log the warning and continue
+                    tlog.warning("docker pull exited %d: %s", pull_exit, pull_stderr)
+
                 # Initialize the Odoo database using a detached container.
                 #
                 # We MUST NOT use `docker run --rm` (blocking) here because Odoo's
@@ -153,6 +165,9 @@ def deploy_odoo_instance(self, instance_id: int) -> dict:
                 # Instead: start detached, use `docker wait` (returns only the exit
                 # code — a single integer — so no buffer overflow), then read the last
                 # few log lines only if the init failed.
+                #
+                # --without-demo=all skips demo data loading, which significantly
+                # reduces init time (especially on Odoo 17/18) and avoids timeouts.
                 tlog.info("Initializing Odoo database (detached, this may take a few minutes)")
                 ssh.execute(f"docker rm -f {init_name} 2>/dev/null || true", timeout=15)
                 init_start_cmd = (
@@ -162,23 +177,23 @@ def deploy_odoo_instance(self, instance_id: int) -> dict:
                     f" -v /opt/cloudtab/{odoo_name}/addons:/mnt/extra-addons"
                     f" -v /opt/cloudtab/{odoo_name}/config/odoo.conf:/etc/odoo/odoo.conf"
                     f" {odoo_image}"
-                    f" odoo --database=odoo --init=base --stop-after-init"
+                    f" odoo --database=odoo --init=base --without-demo=all --stop-after-init"
                 )
-                _, stderr, exit_code = ssh.execute(init_start_cmd, timeout=120)
+                _, stderr, exit_code = ssh.execute(init_start_cmd, timeout=60)
                 if exit_code != 0:
                     raise RuntimeError(f"Failed to start Odoo init container: {stderr}")
 
                 # Block until the init container exits; docker wait prints the exit code.
-                wait_out, _, _ = ssh.execute(f"docker wait {init_name}", timeout=600)
+                wait_out, _, _ = ssh.execute(f"docker wait {init_name}", timeout=900)
                 init_exit = int(wait_out.strip()) if wait_out.strip().isdigit() else -1
                 if init_exit != 0:
                     logs_out, _, _ = ssh.execute(
-                        f"docker logs --tail 30 {init_name} 2>&1", timeout=30
+                        f"docker logs --tail 50 {init_name} 2>&1", timeout=30
                     )
                     ssh.execute(f"docker rm {init_name} 2>/dev/null || true", timeout=15)
                     raise RuntimeError(
                         f"Odoo database initialization failed (exit {init_exit}). "
-                        f"Last log lines: {logs_out[-800:] if logs_out else 'none'}"
+                        f"Last log lines:\n{logs_out if logs_out else 'none'}"
                     )
 
                 ssh.execute(f"docker rm {init_name} 2>/dev/null || true", timeout=15)
@@ -572,6 +587,21 @@ def get_odoo_logs(self, instance_id: int, tail: int = 200) -> dict:
 
         tlog.info("Fetching last %d log lines from %s", tail, instance.container_name)
         with ssh:
+            # Check that the container actually exists before fetching logs.
+            # If deploy failed before the main container was created, docker logs
+            # would return "Error response from daemon: No such container: X" via
+            # stderr (captured by 2>&1) which is confusing.  Give a clear message instead.
+            _, _, inspect_exit = ssh.execute(
+                f"docker inspect {instance.container_name} >/dev/null 2>&1",
+                timeout=10,
+            )
+            if inspect_exit != 0:
+                raise RuntimeError(
+                    f"Container '{instance.container_name}' does not exist on the server. "
+                    f"The instance may not be deployed or the previous deploy may have failed. "
+                    f"Try redeploying the instance."
+                )
+
             stdout, stderr, _ = ssh.execute(
                 f"docker logs --tail {tail} {instance.container_name} 2>&1",
                 timeout=30,
