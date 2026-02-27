@@ -127,13 +127,17 @@ export default function InstanceDetailPage() {
   };
 
   const handleDeleteInstance = async () => {
-    if (!instance || isTaskActive) return;
+    if (!instance) return;
+    // Delete is always allowed — don't block on isTaskActive.
+    // If another task (e.g. "Fetch Logs") is stuck-pending, delete takes priority.
     if (
       !confirm(
         `Are you sure you want to delete "${instance.name}"? This will stop and remove all containers and data from the server. This action cannot be undone.`
       )
     )
       return;
+    // Cancel any stuck/pending task before starting delete
+    setActiveTaskId(null);
     setTaskError(null);
     try {
       const t = await deleteInstance(instance.id);
@@ -437,8 +441,7 @@ export default function InstanceDetailPage() {
         </button>
         <button
           onClick={handleDeleteInstance}
-          disabled={isTaskActive}
-          className="px-3 py-1.5 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 ml-auto disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-3 py-1.5 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 ml-auto"
         >
           Delete Instance
         </button>

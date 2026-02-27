@@ -75,6 +75,22 @@ def deploy_odoo_instance(self, instance_id: int) -> dict:
                     timeout=10,
                 )
 
+                # Fail fast if the requested host port is already bound.
+                # Without this check the deploy runs for several minutes (image pull,
+                # DB init) and only fails at the very last `docker run -p` step.
+                tlog.info("Checking port %d availability", host_port)
+                port_check, _, _ = ssh.execute(
+                    f"ss -tln 2>/dev/null | awk '{{print $4}}' | grep -q ':{host_port}$'"
+                    f" && echo in_use || echo free",
+                    timeout=10,
+                )
+                if (port_check or "").strip() == "in_use":
+                    raise RuntimeError(
+                        f"Port {host_port} is already in use on the server. "
+                        f"Another Odoo instance or service is listening on port {host_port}. "
+                        f"Please choose a different port number when creating the instance."
+                    )
+
                 # Create Docker network for this instance
                 network_name = f"net-{odoo_name}"
                 ssh.execute(f"docker network create {network_name} 2>/dev/null || true", timeout=15)
