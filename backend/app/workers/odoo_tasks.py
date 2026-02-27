@@ -101,10 +101,16 @@ def deploy_odoo_instance(self, instance_id: int) -> dict:
                 if exit_code != 0:
                     raise RuntimeError(f"Failed to start PostgreSQL: {stderr}")
 
-                # Wait for PostgreSQL to be ready
+                # Wait for PostgreSQL AND the 'odoo' database to be accessible.
+                # pg_isready only confirms PG accepts connections; POSTGRES_DB=odoo
+                # creates the database slightly after that, so we wait until we can
+                # actually SELECT from it to avoid a race condition in the init step.
+                tlog.info("Waiting for PostgreSQL and the 'odoo' database to be ready")
                 ssh.execute(
-                    f"for i in $(seq 1 30); do docker exec {pg_name} pg_isready -U odoo && break; sleep 1; done",
-                    timeout=45,
+                    f"for i in $(seq 1 60); do "
+                    f"docker exec {pg_name} psql -U odoo -d odoo -c 'SELECT 1' "
+                    f">/dev/null 2>&1 && break; sleep 1; done",
+                    timeout=75,
                 )
 
                 # Build odoo.conf
@@ -135,13 +141,22 @@ def deploy_odoo_instance(self, instance_id: int) -> dict:
                 )
 
                 odoo_image = f"odoo:{odoo_version}"
+                init_name = f"{odoo_name}-init"
 
-                # Initialize the Odoo database before starting the live container.
-                # This installs the base schema (ir_module_module, ir.http, etc.)
-                # so Odoo can serve requests immediately on first boot.
-                tlog.info("Initializing Odoo database (this may take a few minutes)")
-                init_cmd = (
-                    f"docker run --rm"
+                # Initialize the Odoo database using a detached container.
+                #
+                # We MUST NOT use `docker run --rm` (blocking) here because Odoo's
+                # --init=base writes megabytes of log output to stdout/stderr.  If we
+                # block on the SSH channel, the pipe buffer fills up, Odoo's process
+                # stalls waiting to write more logs, and recv_exit_status() deadlocks.
+                #
+                # Instead: start detached, use `docker wait` (returns only the exit
+                # code — a single integer — so no buffer overflow), then read the last
+                # few log lines only if the init failed.
+                tlog.info("Initializing Odoo database (detached, this may take a few minutes)")
+                ssh.execute(f"docker rm -f {init_name} 2>/dev/null || true", timeout=15)
+                init_start_cmd = (
+                    f"docker run -d --name {init_name}"
                     f" --network {network_name}"
                     f" -v /opt/cloudtab/{odoo_name}/data:/var/lib/odoo"
                     f" -v /opt/cloudtab/{odoo_name}/addons:/mnt/extra-addons"
@@ -149,9 +164,24 @@ def deploy_odoo_instance(self, instance_id: int) -> dict:
                     f" {odoo_image}"
                     f" odoo --database=odoo --init=base --stop-after-init"
                 )
-                stdout, stderr, exit_code = ssh.execute(init_cmd, timeout=600)
+                _, stderr, exit_code = ssh.execute(init_start_cmd, timeout=120)
                 if exit_code != 0:
-                    raise RuntimeError(f"Failed to initialize Odoo database: {stderr}")
+                    raise RuntimeError(f"Failed to start Odoo init container: {stderr}")
+
+                # Block until the init container exits; docker wait prints the exit code.
+                wait_out, _, _ = ssh.execute(f"docker wait {init_name}", timeout=600)
+                init_exit = int(wait_out.strip()) if wait_out.strip().isdigit() else -1
+                if init_exit != 0:
+                    logs_out, _, _ = ssh.execute(
+                        f"docker logs --tail 30 {init_name} 2>&1", timeout=30
+                    )
+                    ssh.execute(f"docker rm {init_name} 2>/dev/null || true", timeout=15)
+                    raise RuntimeError(
+                        f"Odoo database initialization failed (exit {init_exit}). "
+                        f"Last log lines: {logs_out[-800:] if logs_out else 'none'}"
+                    )
+
+                ssh.execute(f"docker rm {init_name} 2>/dev/null || true", timeout=15)
                 tlog.info("Database initialization complete")
 
                 # Deploy Odoo container
@@ -350,9 +380,10 @@ def destroy_odoo_instance(self, instance_id: int) -> dict:
         tlog.info("Destroying instance %s on %s", odoo_name, server.host)
 
         with ssh:
-            # Stop and remove Odoo container
+            # Stop and remove Odoo container (and any leftover init container)
             ssh.execute(f"docker stop {odoo_name} 2>/dev/null || true", timeout=60)
             ssh.execute(f"docker rm {odoo_name} 2>/dev/null || true", timeout=30)
+            ssh.execute(f"docker rm -f {odoo_name}-init 2>/dev/null || true", timeout=15)
 
             # Stop and remove PostgreSQL container
             ssh.execute(f"docker stop {pg_name} 2>/dev/null || true", timeout=60)
