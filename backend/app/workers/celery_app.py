@@ -21,6 +21,16 @@ celery_app.conf.update(
     # Retry policy for transient failures
     task_default_retry_delay=60,
     task_max_retries=3,
+    # Redis connection resilience — survive transient Redis restarts
+    broker_connection_retry_on_startup=True,
+    redis_retry_on_timeout=True,
+    redis_socket_connect_timeout=10,
+    redis_socket_timeout=10,
+    result_backend_transport_options={
+        "retry_policy": {
+            "timeout": 5.0,
+        },
+    },
 )
 
 # Celery Beat periodic tasks

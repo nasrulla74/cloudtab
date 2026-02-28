@@ -1,6 +1,9 @@
 import logging
 from datetime import UTC, datetime
 
+import paramiko
+from celery.exceptions import SoftTimeLimitExceeded
+
 from app.core.database_sync import get_sync_db
 from app.core.encryption import decrypt_value
 from app.models.server import Server
@@ -9,6 +12,14 @@ from app.workers.celery_app import celery_app
 from app.workers.utils import SSH_RETRYABLE, TaskLogger, update_task_log
 
 logger = logging.getLogger(__name__)
+
+# Only retry on transient network errors — auth/key failures should not be retried.
+_TEST_CONN_RETRYABLE = (
+    ConnectionRefusedError,
+    ConnectionResetError,
+    TimeoutError,
+    OSError,
+)
 
 
 def _get_ssh_service(server: Server) -> SSHService:
@@ -21,13 +32,55 @@ def _get_ssh_service(server: Server) -> SSHService:
     )
 
 
+def _friendly_ssh_error(exc: Exception) -> str:
+    """Convert raw SSH/network exceptions into user-readable messages."""
+    msg = str(exc).lower()
+    if isinstance(exc, paramiko.AuthenticationException):
+        return (
+            "SSH authentication failed. "
+            "Make sure the public key is added to ~/.ssh/authorized_keys on the server."
+        )
+    if "connection refused" in msg:
+        return (
+            "Connection refused. "
+            "Check that SSH is running on the server and the port number is correct."
+        )
+    if "timed out" in msg or "timeout" in msg:
+        return (
+            "Connection timed out. "
+            "The server may be unreachable or the port may be blocked by a firewall."
+        )
+    if (
+        "name or service not known" in msg
+        or "nodename nor servname" in msg
+        or "no address associated" in msg
+        or "getaddrinfo failed" in msg
+    ):
+        return "Hostname not found. Check the server hostname or IP address."
+    if "no route to host" in msg or "network is unreachable" in msg:
+        return (
+            "Cannot reach the server. "
+            "Check the IP address and ensure the firewall allows SSH traffic."
+        )
+    if "unable to parse private key" in msg or "invalid key" in msg or "not a valid" in msg:
+        return (
+            "Invalid SSH private key. "
+            "Regenerate the key pair and re-add the public key to the server."
+        )
+    if "host key" in msg:
+        return "Host key verification failed. The server's host key may have changed."
+    return str(exc)
+
+
 @celery_app.task(
     bind=True,
     name="server.test_connection",
-    autoretry_for=SSH_RETRYABLE,
-    retry_backoff=10,
-    retry_backoff_max=60,
-    retry_kwargs={"max_retries": 2},
+    time_limit=120,
+    soft_time_limit=90,
+    autoretry_for=_TEST_CONN_RETRYABLE,
+    retry_backoff=5,
+    retry_backoff_max=15,
+    retry_kwargs={"max_retries": 1},
 )
 def test_server_connection(self, server_id: int) -> dict:
     """Test SSH connectivity to a server."""
@@ -59,14 +112,21 @@ def test_server_connection(self, server_id: int) -> dict:
                 else:
                     server.status = "failed"
                     db.commit()
-                    result = {"status": "failed", "error": f"Unexpected response: {stdout}"}
+                    result = {"status": "failed", "error": f"Unexpected SSH response: {stdout!r}"}
                     tlog.warning("Unexpected SSH response: %s", stdout)
                     update_task_log(task_id, "failed", result)
                     return result
+        except SoftTimeLimitExceeded:
+            server.status = "failed"
+            db.commit()
+            result = {"status": "failed", "error": "Connection test timed out after 90 seconds. The server may be unresponsive."}
+            tlog.error("Soft time limit exceeded during connection test")
+            update_task_log(task_id, "failed", result)
+            return result
         except Exception as e:
             server.status = "failed"
             db.commit()
-            result = {"status": "failed", "error": str(e)}
+            result = {"status": "failed", "error": _friendly_ssh_error(e)}
             tlog.error("SSH connection failed: %s", e)
             update_task_log(task_id, "failed", result)
             return result
@@ -153,7 +213,7 @@ def get_system_info(self, server_id: int) -> dict:
                 return info
 
         except Exception as e:
-            result = {"error": str(e)}
+            result = {"error": _friendly_ssh_error(e)}
             tlog.error("Failed to gather system info: %s", e)
             update_task_log(task_id, "failed", result)
             return result
@@ -228,7 +288,7 @@ def install_server_deps(self, server_id: int) -> dict:
                 return results
 
         except Exception as e:
-            result = {"error": str(e)}
+            result = {"error": _friendly_ssh_error(e)}
             tlog.error("Dependency installation failed: %s", e)
             update_task_log(task_id, "failed", result)
             return result

@@ -8,6 +8,11 @@ interface TaskProgressProps {
   label?: string;
   /** Auto-dismiss success after N ms (0 = never). Default: 3000 */
   autoDismissMs?: number;
+  /** How long task must stay "pending" before showing the stuck warning (default: 30000) */
+  stuckPendingMs?: number;
+  /** Stop polling after this many ms. Default: 300000 (5 min). Use a larger value for
+   *  long-running tasks like Odoo deploy which can take 15-20 min. */
+  pollingTimeoutMs?: number;
 }
 
 export default function TaskProgress({
@@ -15,8 +20,13 @@ export default function TaskProgress({
   onComplete,
   label,
   autoDismissMs = 3000,
+  stuckPendingMs,
+  pollingTimeoutMs,
 }: TaskProgressProps) {
-  const { task, isPolling, error, startPolling, reset } = useTaskPoller(onComplete);
+  const { task, isPolling, isStuck, error, startPolling, reset } = useTaskPoller(onComplete, {
+    stuckPendingMs,
+    ...(pollingTimeoutMs !== undefined && { timeout: pollingTimeoutMs }),
+  });
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -47,6 +57,7 @@ export default function TaskProgress({
   let bannerClass = "bg-blue-50 border-blue-200";
   if (isSuccess) bannerClass = "bg-green-50 border-green-200";
   if (isFailed || error) bannerClass = "bg-red-50 border-red-200";
+  if (isStuck && isRunning) bannerClass = "bg-amber-50 border-amber-200";
 
   // Parse error from result
   let errorMessage = error || null;
@@ -60,10 +71,10 @@ export default function TaskProgress({
   }
 
   return (
-    <div className={`flex items-center gap-3 p-3 border rounded-md text-sm mb-4 ${bannerClass}`}>
+    <div className={`flex items-start gap-3 p-3 border rounded-md text-sm mb-4 ${bannerClass}`}>
       {/* Status indicator */}
       {isRunning && (
-        <div className="flex-shrink-0">
+        <div className="flex-shrink-0 mt-0.5">
           <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent" />
         </div>
       )}
@@ -84,8 +95,13 @@ export default function TaskProgress({
               ? "running..."
               : task?.status || "pending..."}
         </span>
+        {isStuck && isRunning && (
+          <p className="text-amber-700 text-xs mt-1">
+            Waiting longer than expected — the background worker may be busy or temporarily unavailable.
+          </p>
+        )}
         {errorMessage && (
-          <p className="text-red-600 text-xs mt-1 truncate">{errorMessage}</p>
+          <p className="text-red-600 text-xs mt-1 break-words">{errorMessage}</p>
         )}
       </div>
 

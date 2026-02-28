@@ -33,3 +33,7 @@ class InstanceRead(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class OdooConfigApply(BaseModel):
+    updates: dict[str, str]

@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models.user import User
-from app.schemas.odoo_instance import InstanceCreate, InstanceRead, InstanceUpdate
+from app.schemas.odoo_instance import InstanceCreate, InstanceRead, InstanceUpdate, OdooConfigApply
 from app.schemas.task import TaskTriggerResponse
 from app.services.odoo_service import (
     create_instance,
@@ -14,9 +14,11 @@ from app.services.odoo_service import (
 )
 from app.services.server_service import create_task_log, get_server
 from app.workers.odoo_tasks import (
+    apply_odoo_config,
     deploy_odoo_instance,
     destroy_odoo_instance,
     get_odoo_logs,
+    read_odoo_config,
     restart_odoo_instance,
     start_odoo_instance,
     stop_odoo_instance,
@@ -168,3 +170,30 @@ async def get_instance_logs(
     task = get_odoo_logs.delay(instance.id, tail)
     await create_task_log(db, task.id, current_user, "get_logs", instance.id, "instance")
     return TaskTriggerResponse(task_id=task.id, message="Log fetch started")
+
+
+@router.post("/instances/{instance_id}/config/read", response_model=TaskTriggerResponse)
+async def read_instance_config(
+    instance_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Trigger a task to read the current odoo.conf from the instance server."""
+    instance = await _verify_instance_ownership(instance_id, db, current_user)
+    task = read_odoo_config.delay(instance.id)
+    await create_task_log(db, task.id, current_user, "read_config", instance.id, "instance")
+    return TaskTriggerResponse(task_id=task.id, message="Config read started")
+
+
+@router.post("/instances/{instance_id}/config/apply", response_model=TaskTriggerResponse)
+async def apply_instance_config(
+    instance_id: int,
+    data: OdooConfigApply,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Trigger a task to apply updated config to odoo.conf and restart the container."""
+    instance = await _verify_instance_ownership(instance_id, db, current_user)
+    task = apply_odoo_config.delay(instance.id, data.updates)
+    await create_task_log(db, task.id, current_user, "apply_config", instance.id, "instance")
+    return TaskTriggerResponse(task_id=task.id, message="Config apply started")

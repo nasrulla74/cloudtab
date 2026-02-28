@@ -26,8 +26,9 @@ class Settings(BaseSettings):
         self.DATABASE_URL_SYNC = self.DATABASE_URL.replace("+asyncpg", "+psycopg2", 1)
         return self
 
-    # Redis
-    REDIS_URL: str = "redis://localhost:6379/0"
+    # Redis — use the compose service name so it works in any Docker deployment
+    # without needing to set REDIS_URL explicitly
+    REDIS_URL: str = "redis://redis:6379/0"
 
     # Auth
     SECRET_KEY: str = "change-me-to-a-random-secret-key"
